@@ -3,8 +3,12 @@ export const openingReplies=['？','你又没刷出去？','行'];
 export const linMessages=s=>s.linLog||[];
 export const linBusy=s=>Boolean(s.linQueue?.length);
 export const incomingCount=s=>linMessages(s).filter(m=>m.who==='lin').length;
-export function conversationHTML(s){return linMessages(s).map(m=>`<div class="lin-line ${m.who==='me'?'outgoing':''}"><span>${m.who==='me'?'我':'林'} · ${m.time}</span><p>${esc(m.text)}</p></div>`).join('');}
-export function typingHTML(s){return linBusy(s)?'<span>林正在输入</span><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>':'';}
+export function receiptHTML(s,m){const index=linMessages(s).indexOf(m);const read=m.readByLin===true||(m.readByLin===undefined&&linMessages(s).slice(index+1).some(n=>n.who==='lin'));return `<small class="message-receipt ${read?'is-read':'is-unread'}">${read?'已读':'未读'}</small>`;}
+export const photoHTML=()=>`<a class="lin-photo" href="assets/lim-museum-gardens.webp" target="_blank" rel="noopener" aria-label="查看林的换乘照片原图（新窗口）"><img src="assets/lim-museum-gardens.webp" width="1448" height="1086" alt="林拍摄的博物馆花园换乘通道：MG-04，阿尔德线，奥德维克向左"/><span>换乘时拍的 · 点击查看原图 ↗</span></a>`;
+export function conversationHTML(s){if(s.ending==='erasure')return erasureHTML(s);return linMessages(s).map(m=>`<div class="lin-line ${m.who==='me'?'outgoing':''}"><span>${m.who==='me'?'我':m.source==='matched'?'林 · 接返关联':m.source==='original'?'林 · 原始联系':'林'} · ${m.time}</span>${m.attachment==='museum-gardens'?(s.ending==='reference'?'<p class="attachment-replaced">附件已同步 · 原通道参照不可用</p>':photoHTML()):`<p>${esc(m.text)}</p>`}${m.who==='me'?receiptHTML(s,m):''}</div>`).join('');}
+export const erasureTotal=s=>linMessages(s).filter(m=>m.who==='lin').reduce((n,m)=>n+(m.attachment?1:Array.from(m.text).length),0);
+function erasureHTML(s){let remaining=s.v2.erasureChars??(s.v2.erasureStep>=12?erasureTotal(s):0);return linMessages(s).map(m=>{if(m.who==='me')return `<div class="lin-line outgoing"><span>我 · ${esc(m.time)}</span><p>${esc(m.text)}</p>${receiptHTML(s,m)}</div>`;const chars=Array.from(m.text);const length=m.attachment?1:chars.length;const removed=Math.min(remaining,length);remaining-=removed;if(removed===length)return '';const text=chars.slice(0,chars.length-removed).join('');return `<div class="lin-line"><span>林 · ${esc(m.time)}</span>${m.attachment?photoHTML():`<p>${esc(text)}</p>`}</div>`;}).join('');}
+export function typingHTML(s){if(s.ending==='erasure'&&!linBusy(s))return s.v2.erasureStep<5?'正在输入<span class="typing-dots"><i></i><i></i><i></i></span>':'<span>消息已发送 · 等待回复</span>';return linBusy(s)?'<span>林正在输入</span><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>':'';}
 export function repliesHTML(s){
  if(linBusy(s)||s.ending)return '';
  if(s.opening<3)return `<button class="button" data-action="lin-reply" data-step="${s.opening}">${openingReplies[s.opening]}</button>`;
@@ -13,7 +17,7 @@ export function repliesHTML(s){
  return '';
 }
 export function composerHTML(s,id,draft=''){
- return `<form class="lin-compose" data-lin-compose="${id}"><label class="sr-only" for="lin-input-${id}">给林发消息</label><textarea id="lin-input-${id}" data-lin-input="${id}" rows="2" maxlength="320" placeholder="给林发消息…" ${s.ending?'disabled':''}>${esc(draft)}</textarea><button type="submit" class="button" ${linBusy(s)||s.ending?'disabled':''}>发送</button></form>`;
+ return `<form class="lin-compose" data-lin-compose="${id}"><label class="sr-only" for="lin-input-${id}">给林发消息</label><textarea id="lin-input-${id}" data-lin-input="${id}" rows="2" maxlength="320" placeholder="给林发消息…" ${(s.ending&&!['erasure','replacement'].includes(s.ending))?'disabled':''}>${esc(draft)}</textarea><button type="submit" class="button" ${linBusy(s)||(s.ending&&!['erasure','replacement'].includes(s.ending))?'disabled':''}>发送</button></form>`;
 }
 export const deliveryDelay=m=>Math.min(1900,720+Array.from(m.text).length*22);
 export function intentFor(text,s){

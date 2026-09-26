@@ -1,8 +1,10 @@
+import {expansionAction} from './expansion.js';
+import {freshStory,storyAction,afterBase} from './story.js';
 import {openingReplies,intentFor,linBusy} from './messages.js';
 const newMessage=(id,who,text,time='23:48')=>({id,who,text,time});
-export const createState=()=>({schema:8,round:Date.now().toString(36)+Math.random().toString(36).slice(2),view:'opening',opening:0,claim:false,formMessage:'',plan:false,compared:false,proof:false,linChecked:false,linRead:0,preserve:false,selected:'28',mapVersion:'current',seen:[],chat:[],asked:[],ending:null,refundable:6.10,linLog:[],linQueue:[newMessage('hello','lin','救命…')],events:[],sequence:0,togetherAsked:false,memoryAsked:false,rulesRead:false,ruleCompared:false,refundSeen:false,signal:null});
+export const createState=()=>({schema:9,v2:freshStory(),round:Date.now().toString(36)+Math.random().toString(36).slice(2),view:'opening',opening:0,claim:false,formMessage:'',plan:false,compared:false,proof:false,linChecked:false,linRead:0,preserve:false,selected:'28',mapVersion:'current',seen:[],chat:[],asked:[],ending:null,refundable:6.10,linLog:[],linQueue:[newMessage('hello','lin','救命…')],events:[],sequence:0,togetherAsked:false,memoryAsked:false,rulesRead:false,ruleCompared:false,refundSeen:false,signal:null});
 export const duplicateKnown=s=>s.seen.includes('28')||s.seen.includes('43');
-export const canResolve=s=>Boolean(s.opening===3&&s.claim&&s.plan&&s.compared&&s.proof&&s.linChecked&&s.asked.includes('time')&&s.togetherAsked&&s.ruleCompared&&!linBusy(s));
+export const canResolve=s=>Boolean(s.opening===3&&s.claim&&s.plan&&s.compared&&s.proof&&s.linChecked&&s.asked.includes('time')&&s.togetherAsked&&s.ruleCompared&&s.v2?.shared&&s.v2?.routeChecked&&s.v2?.hotline>=2&&!linBusy(s));
 export const canRefund=s=>Boolean(canResolve(s)&&s.refundSeen&&s.linLog.some(m=>m.id==='refund-blackout-0'));
 function incoming(s,key,lines,time='23:52'){
  if(s.events.includes(key))return;
@@ -27,7 +29,7 @@ function topic(s,key,question){
   s.sequence++;incoming(s,'reply-'+s.sequence,[answers[key]||'我也记不太清了。你再看看那张路线？'],s.proof?'23:54':'23:49');
  }
 }
-export function transition(s,action,value){
+function baseTransition(s,action,value){
  const next={...s,seen:[...s.seen],chat:[...s.chat],asked:[...s.asked],linLog:[...s.linLog],linQueue:[...s.linQueue],events:[...s.events]};
  if(s.ending&&!['nav','plan','inspect','mapVersion','read','deliver'].includes(action))return next;
  switch(action){
@@ -67,5 +69,21 @@ export function transition(s,action,value){
   case 'return':if(next.preserve&&canResolve(next)&&value==='museum'){next.ending='return';next.view='ending';incoming(next,'returned',['回到博物馆花园了，出站了！上面的店还开着。','我自己走回去，饮料还是算我的。'],'23:55');}break;
   case 'refund':if(canRefund(next)&&value===true){next.ending='refund';next.view='ending';incoming(next,'closed',['他们说，你已经替我确认到站了。','你选的是哪里？'],'23:55');}break;
  }
+ return next;
+}
+
+export function transition(s,action,value){
+ if(['refund','refund-offer'].includes(action))return s;
+ if(action==='lin-read-receipts'){
+  if(s.ending&&!['return','pending','void','replacement'].includes(s.ending))return s;
+  const now=Date.now();let changed=false;
+  const linLog=s.linLog.map(m=>{if(m.who==='me'&&m.readByLin===false&&Number.isFinite(m.readDueAt)&&m.readDueAt<=now){changed=true;return {...m,readByLin:true};}return m;});
+  return changed?{...s,linLog}:s;
+ }
+ const extra=expansionAction(s,action,value)||storyAction(s,action,value);const next=extra||afterBase(baseTransition(s,action,value),action,value);
+ const known=new Set(s.linLog.map(m=>m.id));
+ next.linLog=next.linLog.map(m=>m.who==='me'&&!known.has(m.id)?{...m,readByLin:false,readDueAt:next.ending&&!['return','pending','void','replacement'].includes(next.ending)?null:Date.now()+800}:m);
+ // A delivered reply is also evidence that Lim has read prior messages.
+ if(action==='deliver'&&next.linLog.length>s.linLog.length&&(!next.ending||['return','pending','void','replacement'].includes(next.ending)))next.linLog=next.linLog.map(m=>m.who==='me'&&m.readByLin===false?{...m,readByLin:true}:m);
  return next;
 }
