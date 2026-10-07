@@ -1,0 +1,55 @@
+# 末班车 · 手机竖屏 / 小红书小工具候选包
+
+这次从仓库 `main` 的游戏源码适配，保留剧情引擎与对话内容。
+
+- 黑色地铁隧道开始页：开始行程、继续行程、声音开关。
+- 手机底部导航：行程、线路图、客服、林；聊天和规则在页面内打开。
+- 规则、线路图、换乘照片随包，地图不发起 fetch。
+- 本机 localStorage 存档；网页端兼容读取旧 sessionStorage 进度。应用清理数据可能丢失存档。
+- 进入开始页或切后台暂停消息推进与声音，继续后恢复。
+- 小工具版本无弹出窗口、外链、模块脚本或联网请求；单个 index.html 入口。
+- 安全区、动态可视高度、16px 输入字号、44px 主要点击区域、可滚动地图及窄屏弹层。
+
+## 声音
+
+目前内置的是本次编写的程序合成声音：双音短信提示、过滤噪声、通风低鸣和轻微持续音。默认关闭，由用户点击开启。没有使用第三方录音；不是伦敦地铁实录。Web Audio 做能力检测，不可用时游戏保持静音可玩。音频实际播放及小红书容器兼容性待验证。
+
+可试听的第三方素材（2026-10-07 查看来源页，均标记 CC0，未下载、未试听或打入包）：
+
+| 用途 | 素材与作者 | 时长 | 来源 |
+| --- | --- | --- | --- |
+| 林的短信到达 | Notification — Fupicat | 0.692 秒 | https://freesound.org/people/Fupicat/sounds/538149/ |
+| 地铁车厢环境 | Subway Ambience — MillieBun（奥斯陆车厢录音） | 27.236 秒 | https://freesound.org/people/MillieBun/sounds/391311/ |
+| 站内空间备选 | subway sub way ambience.wav — pawsound | 41.591 秒 | https://freesound.org/people/pawsound/sounds/154853/ |
+
+素材原文件下载需要 Freesound 登录。建议先试听；车厢环境应低音量循环并做接缝淡化，避免盖过消息提示。官方文档说明支持包内音视频，但文件类型列表没有列出音频扩展名；当前候选包因此不带外部音频文件，也不把音频编码藏入 JS。
+
+## 构建
+
+`journey/` 是网页源码；`minitool/` 是可离线加载的经典脚本产物。不要手改产物中的 app.js。
+
+需要已安装的 esbuild，运行：
+
+```sh
+ESBUILD_PATH=/absolute/path/to/esbuild node scripts/build-minitool.cjs
+```
+
+构建器将 ES modules 合并为经典 IIFE 并转译至 ES2017 / Chrome 61。只在小工具产物中移除独立窗口和跨页跳转。源码里的 network-data.js、safety-data.js 分别是当前 network.svg 和根 index.html 主内容的离线快照，编辑源内容后应同步。
+
+从 minitool 目录压缩里面的文件，让 index.html 直接位于 ZIP 根目录。
+
+DOM 行为检查需要 linkedom（测试工具，不随包交付）：
+
+```sh
+LINKEDOM_PATH=/absolute/path/to/linkedom node scripts/smoke-minitool.cjs
+```
+
+## 验证范围
+
+已检查：JS 语法、离线资源引用、被禁 API 扫描、包体；使用 DOM 测试检查开始前不推进、开场回复、退款入口、当前/存档地图、站点检查、聊天、完整规则、回首页暂停、重载续玩、无 AudioContext 时的静音降级、客服和重开。
+
+未验证：实际渲染截图、手机软键盘、声音听感与播放、小红书平台、旧内核性能、全部结局端到端。
+
+交付的是待平台验证候选包，不表示已通过小红书审核。上传创作服务平台后，必须用同一个 ZIP 在平台模拟器、Android 真机扫码、iOS 真机扫码验证：首屏、开场、地图拖动、打字/收键盘、静音/恢复、切后台/回前台、存档、退款与原有结局。
+
+依据：小红书容器能力清单（官方 CDN，最后更新 2026-08-11）及官方发布的 minitool-zip-builder-1.7.0.skill（内部版本字段为 1.6.0）。最新在线入口本次获取超时；发布前仍需以创作平台实际规则为准。
