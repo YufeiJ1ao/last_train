@@ -1384,6 +1384,7 @@
   } catch (e) {
   }
   state = migrateState(state);
+  var lastRenderedView = "";
   var svgSource = "";
   var mapRequest = 0;
   var restoreFocus = null;
@@ -1565,7 +1566,7 @@
     const both = state.seen.includes("28") && state.seen.includes("43");
     const hasCandidate = duplicateKnown(state);
     const available = stations.filter(([id]) => state.mapVersion === "current" || !["43", "44"].includes(id));
-    return heading("线路查询", "点击车站查看详情，也可以核对行程当日的线路图。", "NETWORK / 1—3") + '<div class="map-controls"><div class="segmented" role="group" aria-label="线路图版本"><button data-action="version" data-version="current" aria-pressed="'.concat(state.mapVersion === "current", '" class="').concat(state.mapVersion === "current" ? "active" : "", '">当前线路图</button><button data-action="version" data-version="archive" aria-pressed="').concat(state.mapVersion === "archive", '" class="').concat(state.mapVersion === "archive" ? "active" : "", '">行程当日</button></div>').concat(button(mapView.zoom ? "缩小" : "放大", "zoom", 'aria-pressed="'.concat(mapView.zoom, '"'), "quiet"), '</div><div id="network-map" class="map-wrapper ').concat(mapView.zoom ? "zoom" : "", '"><p style="color:#172b52;padding:20px">正在载入线路图…</p></div><div class="map-caption"><span>').concat(state.mapVersion === "archive" ? "存档 · 14 SEP / 23:10" : "当前服务版本", '</span><span>中英双语 · 可横向滚动</span></div><div class="station-tools"><section class="panel"><div class="panel-content"><form id="station-form"><label for="station-select">查找车站</label><select id="station-select">').concat(available.map(([id]) => '<option value="'.concat(id, '" ').concat(state.selected === id ? "selected" : "", ">").concat(esc(stationName(id))).concat(id === "28" ? " · A" : id === "43" ? " · B" : "", "</option>")).join(""), '</select><div class="actions"><button class="button secondary" type="submit">查看站点</button></div></form>').concat(state.claim ? '<p class="small-note">退款记录中的两个候选站：</p><div class="actions">'.concat(button("雷恩街 · A", "inspect", 'data-station="28"', "quiet")).concat(button("雷恩街 · B", "inspect", 'data-station="43"', "quiet"), "</div>") : "", '</div></section><section class="panel"><div class="panel-content station-detail">').concat(stationDetail(), "</div></section></div>").concat(state.claim ? '<section class="panel"><div class="panel-title"><h2>候选站点核对</h2><span class="badge">'.concat(state.compared ? "已保留记录" : Number(state.seen.includes("28")) + Number(state.seen.includes("43")) + " / 2", '</span></div><div class="panel-content"><p class="small-note">两条候选记录使用了同一个站名。可直接询问林或客服，再核对它们的位置。</p>').concat(both ? '<div class="comparison"><div><strong>雷恩街 A · CR–28</strong><p>惠特科姆广场<br>↔ 博物馆花园</p><p>存档中已有此站</p></div><div><strong>雷恩街 B · NT–00</strong><p>博物馆花园<br>↔ 边界路</p><p>存档中没有此站</p></div></div>' : "", '<div class="actions">').concat(button("问客服：为什么有两个雷恩街？", "submit-duplicate", hasCandidate ? "" : "disabled")).concat(button("问林：你也看到两个同名站了吗？", "lin-topic", 'data-topic="duplicate" '.concat(hasCandidate ? "" : "disabled"), "secondary")).concat(button("查看朋友的路线", "plan", "", "secondary"), "</div></div></section>") : "");
+    return heading("线路查询", "点击车站查看详情，也可以核对行程当日的线路图。", "NETWORK / 1—3") + '<div class="map-controls"><div class="segmented" role="group" aria-label="线路图版本"><button data-action="version" data-version="current" aria-pressed="'.concat(state.mapVersion === "current", '" class="').concat(state.mapVersion === "current" ? "active" : "", '">当前线路图</button><button data-action="version" data-version="archive" aria-pressed="').concat(state.mapVersion === "archive", '" class="').concat(state.mapVersion === "archive" ? "active" : "", '">行程当日</button></div>').concat(button(mapView.zoom ? "适应屏幕" : "放大地图", "zoom", 'aria-pressed="'.concat(mapView.zoom, '"'), "quiet"), '</div><div id="network-map" class="map-wrapper ').concat(mapView.zoom ? "zoom" : "", '"><p style="color:#172b52;padding:20px">正在载入线路图…</p></div><div class="map-caption"><span>').concat(state.mapVersion === "archive" ? "存档 · 14 SEP / 23:10" : "当前服务版本", '</span><span>默认显示全图 · 放大后可拖动</span></div><div class="station-tools"><section class="panel"><div class="panel-content"><form id="station-form"><label for="station-select">查找车站</label><select id="station-select">').concat(available.map(([id]) => '<option value="'.concat(id, '" ').concat(state.selected === id ? "selected" : "", ">").concat(esc(stationName(id))).concat(id === "28" ? " · A" : id === "43" ? " · B" : "", "</option>")).join(""), '</select><div class="actions"><button class="button secondary" type="submit">查看站点</button></div></form>').concat(state.claim ? '<p class="small-note">退款记录中的两个候选站：</p><div class="actions">'.concat(button("雷恩街 · A", "inspect", 'data-station="28"', "quiet")).concat(button("雷恩街 · B", "inspect", 'data-station="43"', "quiet"), "</div>") : "", '</div></section><section class="panel"><div class="panel-content station-detail">').concat(stationDetail(), "</div></section></div>").concat(state.claim ? '<section class="panel"><div class="panel-title"><h2>候选站点核对</h2><span class="badge">'.concat(state.compared ? "已保留记录" : Number(state.seen.includes("28")) + Number(state.seen.includes("43")) + " / 2", '</span></div><div class="panel-content"><p class="small-note">两条候选记录使用了同一个站名。可直接询问林或客服，再核对它们的位置。</p>').concat(both ? '<div class="comparison"><div><strong>雷恩街 A · CR–28</strong><p>惠特科姆广场<br>↔ 博物馆花园</p><p>存档中已有此站</p></div><div><strong>雷恩街 B · NT–00</strong><p>博物馆花园<br>↔ 边界路</p><p>存档中没有此站</p></div></div>' : "", '<div class="actions">').concat(button("问客服：为什么有两个雷恩街？", "submit-duplicate", hasCandidate ? "" : "disabled")).concat(button("问林：你也看到两个同名站了吗？", "lin-topic", 'data-topic="duplicate" '.concat(hasCandidate ? "" : "disabled"), "secondary")).concat(button("查看朋友的路线", "plan", "", "secondary"), "</div></div></section>") : "");
   }
   async function mountMap() {
     var _a2, _b;
@@ -1666,6 +1667,10 @@
   }
   function render() {
     document.body.dataset.view = state.view;
+    if (lastRenderedView !== state.view) {
+      workspace.scrollTop = 0;
+      lastRenderedView = state.view;
+    }
     const previousMap = $("network-map");
     if (previousMap) {
       mapView.left = previousMap.scrollLeft;
@@ -1690,14 +1695,17 @@
     restoreFocus = document.activeElement;
     modalKind = kind;
     dialog.dataset.kind = kind;
-    $("modal-category").textContent = category;
+    document.body.classList.add("has-modal");
+    $("modal-category").textContent = kind === "lin" ? "林 · 消息" : category;
     $("modal-body").innerHTML = "<h2>".concat(title, "</h2>").concat(body);
+    $("modal-body").scrollTop = 0;
     if (!dialog.open) dialog.showModal();
   }
   function closeModal(userInitiated = false) {
     dialog.close();
     modalKind = "";
-    if (restoreFocus == null ? void 0 : restoreFocus.isConnected) restoreFocus.focus();
+    document.body.classList.remove("has-modal");
+    if (restoreFocus == null ? void 0 : restoreFocus.isConnected) restoreFocus.focus({ preventScroll: true });
   }
   function openChat() {
     act("v2-chat-open");
@@ -1848,7 +1856,7 @@
     } else if (a === "zoom") {
       mapView.zoom = !mapView.zoom;
       $("network-map").classList.toggle("zoom", mapView.zoom);
-      b2.textContent = mapView.zoom ? "缩小" : "放大";
+      b2.textContent = mapView.zoom ? "适应屏幕" : "放大地图";
       b2.setAttribute("aria-pressed", String(mapView.zoom));
     } else if (a === "compare") {
       act("compare");
@@ -1951,6 +1959,7 @@
   });
   dialog.addEventListener("close", () => {
     modalKind = "";
+    document.body.classList.remove("has-modal");
   });
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) {
@@ -1980,7 +1989,7 @@
   function v2ChatTools() {
     if (state.ending === "erasure") return "";
     if (state.ending === "replacement") return '<p class="small-note">接返关联仍在线。</p>';
-    return '<div class="v2-chat-tools">'.concat(!state.ending ? button("暂时结束聊天", "v2-end-chat", "", "end-conversation") : "").concat(button("共享位置", "v2-location", "", "quiet")).concat(button("问换乘经过", "v2-topic", 'data-value="你换乘时下车了吗？"', "quiet")).concat(button("先别退款了", "v2-topic", 'data-value="先别退款了，你先出来。"', "quiet")).concat(button("发张照片看看", "v2-topic", 'data-value="发张照片看看"', "quiet")).concat(state.v2.photo ? button("查看换乘照片", "v2-photo", "", "quiet") : "").concat(button("你真的是林吗？", "v2-topic", 'data-value="你真的是林吗？"', "quiet"), "</div>");
+    return '<details class="chat-extra"><summary>位置、附件与更多话题</summary><div class="v2-chat-tools">'.concat(!state.ending ? button("暂时结束聊天", "v2-end-chat", "", "end-conversation") : "").concat(button("共享位置", "v2-location", "", "quiet")).concat(button("问换乘经过", "v2-topic", 'data-value="你换乘时下车了吗？"', "quiet")).concat(button("先别退款了", "v2-topic", 'data-value="先别退款了，你先出来。"', "quiet")).concat(button("发张照片看看", "v2-topic", 'data-value="发张照片看看"', "quiet")).concat(state.v2.photo ? button("查看换乘照片", "v2-photo", "", "quiet") : "").concat(button("你真的是林吗？", "v2-topic", 'data-value="你真的是林吗？"', "quiet"), "</div></details>");
   }
   function renderV2Live() {
     var _a2;
