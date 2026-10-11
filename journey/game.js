@@ -1,16 +1,22 @@
+import {audioStart,audioToggle,audioIncoming,audioPause,audioEnabled} from './sound.js';
+import {networkSVG} from './network-data.js';
+import {safetyHTML} from './safety-data.js';
 import {stationNoteHTML} from './station-notes.js';
 import {investigation,investigationHTML,expansionEntry,expansionEnding,migrateState} from './expansion.js';
 import {createState,transition,canResolve,duplicateKnown} from './engine.js';
 import {stations} from './stations.js';
 import {esc,linMessages,incomingCount,conversationHTML,repliesHTML,typingHTML,composerHTML,linBusy,deliveryDelay,photoHTML} from './messages.js';
 import {timeGuidance} from './rules.js';
-import {playSignal,clearCorruption} from './effects.js';
+import {playSignal,clearCorruption,stopSignals} from './effects.js';
 const $=id=>document.getElementById(id);
 const workspace=$('workspace'),dialog=$('modal');
-const SAVE='night-travel-demo-v2-expanded';
+const SAVE='night-travel-mobile-v1';
+let gameStarted=false;
+let hasSave=false;
 let state=createState();
-try{const saved=JSON.parse(sessionStorage.getItem(SAVE));if(saved?.schema===9&&Array.isArray(saved.chat)&&Array.isArray(saved.seen)&&Array.isArray(saved.asked))state={...state,...saved};}catch{}
+try{const saved=JSON.parse((localStorage.getItem(SAVE)||sessionStorage.getItem('night-travel-demo-v2-expanded')));if(saved?.schema===9&&Array.isArray(saved.chat)&&Array.isArray(saved.seen)&&Array.isArray(saved.asked)){state={...state,...saved};hasSave=true;}}catch{}
 state=migrateState(state);
+let lastRenderedView='';
 let svgSource='',mapRequest=0,restoreFocus=null,modalKind='',chatWindow=null;
 let notified=incomingCount(state),notifiedRound=state.round;
 const mapView={left:0,top:0,zoom:false};
@@ -22,17 +28,18 @@ const stationName=id=>{const s=stations.find(x=>x[0]===id);return s?`${s[1]} / $
 const heading=(title,description,code='1408 / JOURNEYS')=>`<div class="page-heading"><div><span class="eyebrow">账户服务 / ${state.view==='map'?'线路查询':state.view==='support'?'协助中心':'行程管理'}</span><h1>${title}</h1><p>${description}</p></div><span class="ref">${code}</span></div>`;
 function tell(text){$('announcement').textContent=text;}
 function act(type,value){state=transition(state,type,value);}
-function persist(){try{sessionStorage.setItem(SAVE,JSON.stringify(state));}catch{}}
+function persist(){if(!gameStarted)return;try{localStorage.setItem(SAVE,JSON.stringify(state));sessionStorage.setItem('night-travel-demo-v2-expanded',JSON.stringify(state));}catch{}}
 function chatSnapshot(){return {...state,chat:[],linQueue:state.linQueue.map(m=>({id:m.id}))};}
 function scheduleLin(){
+ if(!gameStarted||document.hidden)return;
  const head=state.linQueue[0],key=head?state.round+':'+head.id:'';
  if(key===scheduledMessage)return;
  clearTimeout(linTimer);scheduledMessage=key;
  if(!head)return;
  const round=state.round;
- linTimer=setTimeout(()=>{linTimer=null;scheduledMessage='';if(state.round!==round)return;act('deliver',head.id);refreshLive();},deliveryDelay(head));
+ linTimer=setTimeout(()=>{linTimer=null;scheduledMessage='';if(!gameStarted||document.hidden||state.round!==round)return;act('deliver',head.id);refreshLive();},deliveryDelay(head));
 }
-setInterval(()=>{const next=transition(state,'lin-read-receipts');if(next!==state){state=next;updateChatViews();persist();publish();}},200);
+setInterval(()=>{if(!gameStarted||document.hidden)return;const next=transition(state,'lin-read-receipts');if(next!==state){state=next;updateChatViews();persist();publish();}},200);
 function runSignal(){if(state.signal&&state.signal.id!==lastSignal){lastSignal=state.signal.id;playSignal(state.signal.kind);}}
 function refreshLive(){renderV2Live();renderSide();updateChatViews();updateSupportOptions();persist();scheduleLin();runSignal();}
 function publish(){if(chatWindow&&!chatWindow.closed)chatWindow.postMessage({channel:'nt-lin-v9',type:'snapshot',state:chatSnapshot()},location.origin);}
@@ -64,6 +71,7 @@ function updateChatViews(){
  const count=incomingCount(state);
  if(notifiedRound!==state.round){notifiedRound=state.round;notified=count;$('lin-toast').hidden=true;}
  if(count>notified){
+  if(gameStarted)audioIncoming();
   notified=count;
   if(state.opening===3&&!(dialog.open&&modalKind==='lin')){
    const latest=linMessages(state).filter(m=>m.who==='lin').at(-1);
@@ -109,12 +117,12 @@ function renderMap(){
  const both=state.seen.includes('28')&&state.seen.includes('43');
  const hasCandidate=duplicateKnown(state);
  const available=stations.filter(([id])=>state.mapVersion==='current'||!['43','44'].includes(id));
- return heading('线路查询','点击车站查看详情，也可以核对行程当日的线路图。','NETWORK / 1—3')+`<div class="map-controls"><div class="segmented" role="group" aria-label="线路图版本"><button data-action="version" data-version="current" aria-pressed="${state.mapVersion==='current'}" class="${state.mapVersion==='current'?'active':''}">当前线路图</button><button data-action="version" data-version="archive" aria-pressed="${state.mapVersion==='archive'}" class="${state.mapVersion==='archive'?'active':''}">行程当日</button></div>${button(mapView.zoom?'缩小':'放大','zoom',`aria-pressed="${mapView.zoom}"`,'quiet')}<a class="text-button" href="network.svg" target="_blank" rel="noopener">完整地图 ↗</a></div><div id="network-map" class="map-wrapper ${mapView.zoom?'zoom':''}"><p style="color:#172b52;padding:20px">正在载入线路图…</p></div><div class="map-caption"><span>${state.mapVersion==='archive'?'存档 · 14 SEP / 23:10':'当前服务版本'}</span><span>中英双语 · 可横向滚动</span></div><div class="station-tools"><section class="panel"><div class="panel-content"><form id="station-form"><label for="station-select">查找车站</label><select id="station-select">${available.map(([id])=>`<option value="${id}" ${state.selected===id?'selected':''}>${esc(stationName(id))}${id==='28'?' · A':id==='43'?' · B':''}</option>`).join('')}</select><div class="actions"><button class="button secondary" type="submit">查看站点</button></div></form>${state.claim?`<p class="small-note">退款记录中的两个候选站：</p><div class="actions">${button('雷恩街 · A','inspect','data-station="28"','quiet')}${button('雷恩街 · B','inspect','data-station="43"','quiet')}</div>`:''}</div></section><section class="panel"><div class="panel-content station-detail">${stationDetail()}</div></section></div>${state.claim?`<section class="panel"><div class="panel-title"><h2>候选站点核对</h2><span class="badge">${state.compared?'已保留记录':Number(state.seen.includes('28'))+Number(state.seen.includes('43'))+' / 2'}</span></div><div class="panel-content"><p class="small-note">两条候选记录使用了同一个站名。可直接询问林或客服，再核对它们的位置。</p>${both?'<div class="comparison"><div><strong>雷恩街 A · CR–28</strong><p>惠特科姆广场<br>↔ 博物馆花园</p><p>存档中已有此站</p></div><div><strong>雷恩街 B · NT–00</strong><p>博物馆花园<br>↔ 边界路</p><p>存档中没有此站</p></div></div>':''}<div class="actions">${button('问客服：为什么有两个雷恩街？','submit-duplicate',hasCandidate?'':'disabled')}${button('问林：你也看到两个同名站了吗？','lin-topic',`data-topic="duplicate" ${hasCandidate?'':'disabled'}`,'secondary')}${button('查看朋友的路线','plan','','secondary')}</div></div></section>`:''}`;
+ return heading('线路查询','点击车站查看详情，也可以核对行程当日的线路图。','NETWORK / 1—3')+`<div class="map-controls"><div class="segmented" role="group" aria-label="线路图版本"><button data-action="version" data-version="current" aria-pressed="${state.mapVersion==='current'}" class="${state.mapVersion==='current'?'active':''}">当前线路图</button><button data-action="version" data-version="archive" aria-pressed="${state.mapVersion==='archive'}" class="${state.mapVersion==='archive'?'active':''}">行程当日</button></div>${button(mapView.zoom?'适应屏幕':'放大地图','zoom',`aria-pressed="${mapView.zoom}"`,'quiet')}<a class="text-button" href="network.svg" target="_blank" rel="noopener">完整地图 ↗</a></div><div id="network-map" class="map-wrapper ${mapView.zoom?'zoom':''}"><p style="color:#172b52;padding:20px">正在载入线路图…</p></div><div class="map-caption"><span>${state.mapVersion==='archive'?'存档 · 14 SEP / 23:10':'当前服务版本'}</span><span>默认显示全图 · 放大后可拖动</span></div><div class="station-tools"><section class="panel"><div class="panel-content"><form id="station-form"><label for="station-select">查找车站</label><select id="station-select">${available.map(([id])=>`<option value="${id}" ${state.selected===id?'selected':''}>${esc(stationName(id))}${id==='28'?' · A':id==='43'?' · B':''}</option>`).join('')}</select><div class="actions"><button class="button secondary" type="submit">查看站点</button></div></form>${state.claim?`<p class="small-note">退款记录中的两个候选站：</p><div class="actions">${button('雷恩街 · A','inspect','data-station="28"','quiet')}${button('雷恩街 · B','inspect','data-station="43"','quiet')}</div>`:''}</div></section><section class="panel"><div class="panel-content station-detail">${stationDetail()}</div></section></div>${state.claim?`<section class="panel"><div class="panel-title"><h2>候选站点核对</h2><span class="badge">${state.compared?'已保留记录':Number(state.seen.includes('28'))+Number(state.seen.includes('43'))+' / 2'}</span></div><div class="panel-content"><p class="small-note">两条候选记录使用了同一个站名。可直接询问林或客服，再核对它们的位置。</p>${both?'<div class="comparison"><div><strong>雷恩街 A · CR–28</strong><p>惠特科姆广场<br>↔ 博物馆花园</p><p>存档中已有此站</p></div><div><strong>雷恩街 B · NT–00</strong><p>博物馆花园<br>↔ 边界路</p><p>存档中没有此站</p></div></div>':''}<div class="actions">${button('问客服：为什么有两个雷恩街？','submit-duplicate',hasCandidate?'':'disabled')}${button('问林：你也看到两个同名站了吗？','lin-topic',`data-topic="duplicate" ${hasCandidate?'':'disabled'}`,'secondary')}${button('查看朋友的路线','plan','','secondary')}</div></div></section>`:''}`;
 }
 async function mountMap(){
  const serial=++mapRequest;
  try{
-  if(!svgSource){const response=await fetch('./network.svg');if(!response.ok)throw Error('map');svgSource=await response.text();}
+  if(!svgSource)svgSource=networkSVG;
   if(state.view!=='map'||state.ending||serial!==mapRequest)return;
   const doc=new DOMParser().parseFromString(svgSource,'image/svg+xml'),root=doc.documentElement;
   root.setAttribute('aria-label',state.mapVersion==='archive'?'行程当日线路图':'当前线路图');
@@ -172,6 +180,8 @@ function renderSupport(){
 function renderResolution(){if(investigation(state).rescued)return investigationHTML({...state,v3:{...investigation(state),panel:'aftermath'}});if(state.v2.checkpoint)return v2Checkpoint(); return v2ReturnTools()+heading('保留原始行程','请指定最后一次能够确认的车站。','NT—008 / RETAINED')+`<div class="shared-note">夜间账户服务：可以保留本次行程。返回请求需要匹配一条有效刷卡记录。费用将在行程结束后重新核算。</div><section class="panel"><div class="panel-title"><h2>提交返回请求</h2><span class="badge pending">原行程尚未关闭</span></div><div class="panel-content"><p>请使用持卡人提供的原始记录。原定目的地可能尚未到达。</p><form id="return-form"><label for="return-station">最近一次已确认的车站</label><select id="return-station" required><option value="">选择车站</option><option value="alderwick">奥德维克 / Alderwick</option><option value="museum">博物馆花园 / Museum Gardens</option><option value="wren">雷恩街 / Wren Street</option><option value="whitcombe">惠特科姆广场 / Whitcombe Square</option></select>${state.formMessage?`<p class="form-feedback" role="status">${state.formMessage}</p>`:''}<div class="actions"><button class="button" type="submit">保留行程并请求返回</button>${button('核对原始附件','plan','','secondary')}</div></form><p class="tip">关闭原行程后，将无法使用本次进站记录申请返回。</p></div></section>`;}
 function renderEnding(){return expansionEnding(state)||v2Ending();}
 function render(){
+ document.body.dataset.view=state.view;
+ if(lastRenderedView!==state.view){workspace.scrollTop=0;lastRenderedView=state.view;}
  const previousMap=$('network-map');if(previousMap){mapView.left=previousMap.scrollLeft;mapView.top=previousMap.scrollTop;}
  renderSide();workspace.innerHTML=state.ending?renderEnding():({opening:renderOpening,history:renderHistory,claim:renderClaim,map:renderMap,support:renderSupport,resolution:renderResolution}[state.view]||renderHistory)();
  if(state.view==='map'&&!state.ending)mountMap();
@@ -182,12 +192,15 @@ function render(){
 }
 function modal(title,body,category='行程档案',kind='document'){
  restoreFocus=document.activeElement;modalKind=kind;
- $('modal-category').textContent=category;$('modal-body').innerHTML=`<h2>${title}</h2>${body}`;
+ dialog.dataset.kind=kind;document.body.classList.add('has-modal');
+ $('modal-category').textContent=kind==='lin'?'林 · 消息':category;$('modal-body').innerHTML=`<h2>${title}</h2>${body}`;
+ $('modal-body').scrollTop=0;
  if(!dialog.open)dialog.showModal();
 }
-function closeModal(userInitiated=false){dialog.close();modalKind='';if(restoreFocus?.isConnected)restoreFocus.focus();}
+function closeModal(userInitiated=false){dialog.close();modalKind='';document.body.classList.remove('has-modal');if(restoreFocus?.isConnected)restoreFocus.focus({preventScroll:true});}
 function openChat(){act('v2-chat-open');refreshLive();modal('林',chatBody(),'MESSAGES / 23:48 — 23:55','lin');markRead();const thread=$('modal-lin-thread');thread.scrollTop=thread.scrollHeight;}
 function openChatWindow(){
+ if(window.LAST_TRAIN_MINITOOL||window.matchMedia('(max-width:760px)').matches){openChat();return;}
  act('v2-chat-open');refreshLive();
  if(chatWindow&&!chatWindow.closed){chatWindow.focus();publish();return;}
  chatWindow=window.open('chat.html','night-travel-lin-'+state.round,'popup=yes,width=440,height=760,resizable=yes,scrollbars=yes');
@@ -236,6 +249,9 @@ function sendLinText(text){
 }
 function onAction(b){
  const a=b.dataset.action;
+ if(a==='full-rules'){modal('乘客安全须知',safetyHTML,'NIGHT TRAVEL / 规则档案');return;}
+ if(a==='mobile-evidence'){modal('本次核对',$('evidence-list').innerHTML,'1408 / 已保留记录');return;}
+ if(a==='mobile-menu'){openMenu();return;}
  if(a.startsWith('v3-')){handleV3(a,b.dataset.value);return;}
  if(a.startsWith('v2-')){handleV2(a,b.dataset.value);return;}
  if(a==='nav'){act('nav',b.dataset.view);render();workspace.focus();}
@@ -253,7 +269,7 @@ function onAction(b){
  else if(a==='dismiss-toast')$('lin-toast').hidden=true;
  else if(a==='inspect'){act('inspect',b.dataset.station);render();tell('已查看 '+stationName(b.dataset.station)+'。');}
  else if(a==='version'){act('mapVersion',b.dataset.version);render();}
- else if(a==='zoom'){mapView.zoom=!mapView.zoom;$('network-map').classList.toggle('zoom',mapView.zoom);b.textContent=mapView.zoom?'缩小':'放大';b.setAttribute('aria-pressed',String(mapView.zoom));}
+ else if(a==='zoom'){mapView.zoom=!mapView.zoom;$('network-map').classList.toggle('zoom',mapView.zoom);b.textContent=mapView.zoom?'适应屏幕':'放大地图';b.setAttribute('aria-pressed',String(mapView.zoom));}
  else if(a==='compare'){act('compare');render();tell('不同站点的核对结果已保存。');}
  else if(a==='submit-duplicate')ask('duplicate');
  else if(a==='ask')ask(b.dataset.question);
@@ -314,14 +330,14 @@ document.addEventListener('submit',e=>{
 
 });
 dialog.addEventListener('cancel',e=>{e.preventDefault();closeModal(true);});
-dialog.addEventListener('close',()=>{modalKind='';});
+dialog.addEventListener('close',()=>{modalKind='';document.body.classList.remove('has-modal');});
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeModal(true);}});
 setupV2();
-render();
+initStartScreen();
 let erasureQuietAt=0;
-setInterval(()=>{if(state.ending!=='erasure'||linBusy(state)){erasureQuietAt=0;return;}if((state.v2.erasureStep||0)>=12||document.hidden)return;if(!erasureQuietAt){erasureQuietAt=Date.now();return;}if(Date.now()-erasureQuietAt<2400)return;act('v2-erasure-tick');if(state.v2.erasureStep>=12)render();else refreshLive();publish();},90);
+setInterval(()=>{if(!gameStarted||state.ending!=='erasure'||linBusy(state)){erasureQuietAt=0;return;}if((state.v2.erasureStep||0)>=12||document.hidden)return;if(!erasureQuietAt){erasureQuietAt=Date.now();return;}if(Date.now()-erasureQuietAt<2400)return;act('v2-erasure-tick');if(state.v2.erasureStep>=12)render();else refreshLive();publish();},90);
 
-function v2ChatTools(){if(state.ending==='erasure')return '';if(state.ending==='replacement')return '<p class="small-note">接返关联仍在线。</p>';return `<div class="v2-chat-tools">${!state.ending?button('暂时结束聊天','v2-end-chat','','end-conversation'):''}${button('共享位置','v2-location','','quiet')}${button('问换乘经过','v2-topic','data-value="你换乘时下车了吗？"','quiet')}${button('先别退款了','v2-topic','data-value="先别退款了，你先出来。"','quiet')}${button('发张照片看看','v2-topic','data-value="发张照片看看"','quiet')}${state.v2.photo?button('查看换乘照片','v2-photo','','quiet'):''}${button('你真的是林吗？','v2-topic','data-value="你真的是林吗？"','quiet')}</div>`;}
+function v2ChatTools(){if(state.ending==='erasure')return '';if(state.ending==='replacement')return '<p class="small-note">接返关联仍在线。</p>';return `<details class="chat-extra"><summary>位置、附件与更多话题</summary><div class="v2-chat-tools">${!state.ending?button('暂时结束聊天','v2-end-chat','','end-conversation'):''}${button('共享位置','v2-location','','quiet')}${button('问换乘经过','v2-topic','data-value="你换乘时下车了吗？"','quiet')}${button('先别退款了','v2-topic','data-value="先别退款了，你先出来。"','quiet')}${button('发张照片看看','v2-topic','data-value="发张照片看看"','quiet')}${state.v2.photo?button('查看换乘照片','v2-photo','','quiet'):''}${button('你真的是林吗？','v2-topic','data-value="你真的是林吗？"','quiet')}</div></details>`;}
 function renderV2Live(){
  renderLocationPin();
  if(modalKind==='investigation'){const field=$('v3-channel'),code=field?.value,focused=document.activeElement===field,expanded=$('modal-body').querySelector('details')?.open;$('modal-body').innerHTML=investigationHTML(state);if(code&&$('v3-channel'))$('v3-channel').value=code;if(focused&&$('v3-channel'))$('v3-channel').focus();if(expanded&&$('modal-body').querySelector('details'))$('modal-body').querySelector('details').open=true;}
@@ -387,15 +403,15 @@ function hint(){state.v2.hint++;persist();const direct=state.v2.hint%3===0;let t
  modal('一点提示',`<p>${text}</p><p class="small-note">规则有适用情境，也可能被客服误用。请对照现场描述与原始记录。查看提示不会影响行程。</p><div class="actions">${button('再给一点提示','hint','','secondary')}${button('继续调查','close')}</div>`,'帮助');}
 function setupV2(){
  let hoverTimer=null,lastActivity=Date.now(),lastTick=Date.now();
- setInterval(()=>{if(!document.hidden)updateLocationTelemetry();},1000);
- const begin=e=>{const b=e.target.closest?.('[data-action="offer-refund"],#refund-submit');if(!b||b.disabled||state.ending)return;clearTimeout(hoverTimer);hoverTimer=setTimeout(()=>{if(!linBusy(state)){act('v2-hover');refreshLive();}},950);};
+ setInterval(()=>{if(gameStarted&&!document.hidden)updateLocationTelemetry();},1000);
+ const begin=e=>{const b=e.target.closest?.('[data-action="offer-refund"],#refund-submit');if(!b||b.disabled||state.ending)return;clearTimeout(hoverTimer);hoverTimer=setTimeout(()=>{if(gameStarted&&!document.hidden&&!linBusy(state)){act('v2-hover');refreshLive();}},950);};
  document.addEventListener('mouseover',begin);document.addEventListener('focusin',begin);
  document.addEventListener('mouseout',e=>{if(e.target.closest?.('[data-action="offer-refund"],#refund-submit'))clearTimeout(hoverTimer);});document.addEventListener('focusout',()=>clearTimeout(hoverTimer));
  document.addEventListener('pointerdown',()=>{lastActivity=Date.now();});document.addEventListener('keydown',()=>{lastActivity=Date.now();});
  document.addEventListener('click',e=>{const b=e.target.closest?.('[data-action]');if(!b)return;if(b.dataset.action==='request-preserve'){act('v2-refuse');render();}});
  document.addEventListener('submit',e=>{if(e.target.id!=='v2-support-form')return;e.preventDefault();const t=$('support-input').value;const k=/人工|真人|电话/.test(t)?'human':/不要|别退|暂停/.test(t)?'stop':/危险|救|安全/.test(t)?'danger':/定位|移动/.test(t)?'records':/在哪|位置|出口/.test(t)?'location':/联系|身份/.test(t)?'identity':/规则|须知|矛盾/.test(t)?'rules':'fallback';handleV2('v2-support',k);});
  document.addEventListener('visibilitychange',()=>{lastTick=Date.now();if(!document.hidden){state.v2.idleAt=Date.now();state.v2.idle=0;lastActivity=Date.now();}});
- setInterval(()=>{const now=Date.now();const gap=now-lastTick;lastTick=now;if(document.hidden||state.ending||!state.claim)return;if(gap>5000){state.v2.idleAt=now;return;}const elapsed=now-state.v2.idleAt;const thresholds=[90000,180000,300000];if(state.v2.idle<3&&elapsed>thresholds[state.v2.idle]&&!linBusy(state)&&now-lastActivity>45000){act('v2-idle');refreshLive();}},2500);
+ setInterval(()=>{const now=Date.now();const gap=now-lastTick;lastTick=now;if(!gameStarted||document.hidden||state.ending||!state.claim)return;if(gap>5000){state.v2.idleAt=now;return;}const elapsed=now-state.v2.idleAt;const thresholds=[90000,180000,300000];if(state.v2.idle<3&&elapsed>thresholds[state.v2.idle]&&!linBusy(state)&&now-lastActivity>45000){act('v2-idle');refreshLive();}},2500);
 }
 
 function renderLocationPin(){
@@ -444,3 +460,29 @@ function handleV3(a,value){
  if(investigation(state).panel==='closed'){closeModal();return;}
  modal('记录复核',investigationHTML(state),'NT-008 / 原始记录','investigation');
 }
+
+function openMenu(){
+ modal('行程菜单',`<div class="menu-actions">${button('返回开始界面','mobile-home')}${button('乘客安全须知','full-rules','','secondary')}${button('查看核对记录','mobile-evidence','','secondary')}${button('画面设置','v2-settings','','secondary')}${button('需要一点提示？','hint','','secondary')}${button('重新开始','restart','','secondary')}</div><p class="small-note">进度保存在当前设备。清理应用数据可能清除记录。</p>`,'LAST TRAIN');
+}
+function showHome(){
+ if(dialog.open)closeModal();persist();gameStarted=false;clearTimeout(linTimer);scheduledMessage='';audioPause();stopSignals();
+ document.body.classList.add('at-start');$('start-screen').hidden=false;
+ $('continue-game').hidden=!hasSave;$('new-game').textContent=hasSave?'重新开始':'开始行程';$('start-title').focus();
+}
+function launch(fresh){
+ if(fresh&&hasSave&&!window.confirm('重新开始会清除本机当前行程，确定吗？'))return;
+ if(fresh){state=createState();Object.assign(drafts,{side:'',opening:'',modal:''});Object.assign(mapView,{left:0,top:0,zoom:false});notified=0;notifiedRound=state.round;lastSignal='';}
+ gameStarted=true;hasSave=true;document.body.classList.remove('at-start');$('start-screen').hidden=true;
+ audioStart();render();workspace.focus();
+}
+function initStartScreen(){
+ $('new-game').addEventListener('click',()=>launch(true));$('continue-game').addEventListener('click',()=>launch(false));
+ document.querySelectorAll('[data-sound-toggle]').forEach(b=>b.addEventListener('click',()=>{audioToggle();syncSoundButtons();}));
+ document.addEventListener('click',e=>{const b=e.target.closest('[data-action="mobile-home"]');if(b)showHome();});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){persist();clearTimeout(linTimer);scheduledMessage='';audioPause();}else if(gameStarted){audioStart();scheduleLin();}});
+ window.addEventListener('pagehide',()=>{persist();audioPause();});
+ function viewport(){const v=window.visualViewport;document.documentElement.style.setProperty('--app-height',Math.round(v?v.height:window.innerHeight)+'px');}
+ viewport();window.addEventListener('resize',viewport);if(window.visualViewport)window.visualViewport.addEventListener('resize',viewport);
+ syncSoundButtons();showHome();
+}
+function syncSoundButtons(){document.querySelectorAll('[data-sound-toggle]').forEach(b=>{b.textContent=audioEnabled()?'声音：开':'声音：关';b.setAttribute('aria-pressed',String(audioEnabled()));});}

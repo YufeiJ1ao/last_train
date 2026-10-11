@@ -79,3 +79,5 @@ export function playSignal(kind){
  effectTimer=setTimeout(()=>{if(typeof layer.hidePopover==='function'){try{layer.hidePopover();}catch{}}layer.hidden=true;layer.textContent='';if(important)corruptPage(reduced,kind);},important&&!reduced?1250:reduced?900:550);
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){clearTimeout(phaseTimer);clearTimeout(effectTimer);const layer=document.getElementById('screen-signal');try{layer?.hidePopover?.();}catch{}if(layer)layer.hidden=true;clearCorruption();}});
+
+export function stopSignals(){clearTimeout(effectTimer);clearTimeout(phaseTimer);const layer=document.getElementById("screen-signal");if(layer){try{layer.hidePopover();}catch{}layer.hidden=true;}clearCorruption();}
